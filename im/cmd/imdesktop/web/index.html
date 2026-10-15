@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IM · P2P</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app">
+  <aside class="sidebar">
+    <div class="brand">IM<span>·</span>P2P</div>
+    <div class="self card">
+      <div class="self-nick" id="selfNick">…</div>
+      <div class="self-id" id="selfId"></div>
+      <div class="self-room">房间 <b id="room">lobby</b></div>
+    </div>
+    <div class="status" id="status">正在连接…</div>
+    <div class="section-title">节点 <span class="count" id="peerCount">0</span></div>
+    <ul class="peers" id="peers"></ul>
+    <div class="tip">消息经 go-libp2p 点对点直连传输，中央服务器仅负责发现与协调。</div>
+  </aside>
+
+  <main class="chat">
+    <header class="chat-head">
+      <div class="target">发送给 <b id="targetLabel">所有人</b></div>
+      <div class="head-right"><span class="dot" id="connDot"></span><span id="connText">未连接</span></div>
+    </header>
+
+    <div class="messages" id="messages">
+      <div class="empty" id="empty">还没有消息。选择右侧节点或直接发送给所有人。</div>
+    </div>
+
+    <div class="composer">
+      <div class="tools">
+        <button id="emojiBtn" title="表情">😊</button>
+        <label class="tool-btn" title="图片 / 文件">📎<input type="file" id="fileInput" multiple hidden></label>
+        <button id="micBtn" class="tool-btn" title="语音消息">🎤</button>
+        <span class="recording" id="recording" hidden><i></i>录音中 <b id="recTime">0:00</b> · 点击 🎤 结束并发送</span>
+      </div>
+      <div class="input-row">
+        <textarea id="input" rows="1" placeholder="输入消息 · Enter 发送 / Shift+Enter 换行"></textarea>
+        <button id="sendBtn">发送</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="emoji-picker" id="emojiPicker" hidden></div>
+<div class="toast" id="toast" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
