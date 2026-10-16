@@ -23,6 +23,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/multiformats/go-multiaddr"
 
+	"github.com/lhx333/im-p2p/internal/addrs"
 	"github.com/lhx333/im-p2p/internal/rv"
 	"github.com/lhx333/im-p2p/internal/wire"
 )
@@ -43,7 +44,7 @@ type Config struct {
 	Nick         string   // 昵称
 	Room         string   // 房间名
 	ListenAddrs  []string // 监听地址,为空则用 libp2p 默认
-	Server       peer.AddrInfo
+	RVURL        string   // 协调服务地址(Cloudflare Workers 上的 im-rv)
 	BlobDir      string
 
 	OnMessage func(Message)
@@ -151,10 +152,11 @@ func (n *Node) logf(format string, args ...any) {
 // Start 启动协调客户端,开始发现同房间的 peer。
 func (n *Node) Start(ctx context.Context) {
 	n.rvClient = &rv.Client{
-		Host:     n.Host,
-		Server:   n.cfg.Server,
+		URL:      n.cfg.RVURL,
 		Room:     n.cfg.Room,
 		Nick:     n.cfg.Nick,
+		SelfID:   n.SelfID(),
+		Addrs:    func() []string { return addrs.Reachable(n.Host) },
 		Interval: 5 * time.Second,
 		OnPeers:  n.onDiscovered,
 		OnStatus: n.emitStatus,

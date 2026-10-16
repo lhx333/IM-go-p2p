@@ -6,3 +6,7 @@
 *.sqlog.zst
 go.work
 go.work.sum
+
+# IM 客户端构建产物与 Worker 依赖
+/im/dist/
+/im/worker/node_modules/

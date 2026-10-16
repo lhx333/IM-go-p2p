@@ -3,48 +3,85 @@ package imnet_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
-	libp2p "github.com/libp2p/go-libp2p"
-	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/multiformats/go-multiaddr"
-
-	"github.com/lhx333/im-p2p/internal/addrs"
 	"github.com/lhx333/im-p2p/internal/imnet"
-	"github.com/lhx333/im-p2p/internal/rv"
+	"github.com/lhx333/im-p2p/internal/wire"
 )
 
-func toMA(ss []string) []multiaddr.Multiaddr {
-	out := make([]multiaddr.Multiaddr, 0, len(ss))
-	for _, s := range ss {
-		if ma, err := multiaddr.NewMultiaddr(s); err == nil {
-			out = append(out, ma)
-		}
-	}
-	return out
+// fakeRV 是协调服务的测试替身,契约与 Cloudflare Workers 上的 im-rv 一致:
+//   - POST /v1/register  记录 peer 的房间/昵称/地址
+//   - GET  /v1/discover  返回同房间其它 peer
+type fakeRV struct {
+	mu    sync.Mutex
+	rooms map[string]map[string]wire.PeerAddr
 }
 
-// TestEndToEnd 启动一个协调服务器与两个客户端,验证:
+func (f *fakeRV) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch {
+	case r.URL.Path == "/v1/register" && r.Method == http.MethodPost:
+		var m wire.Msg
+		if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
+			http.Error(w, "bad json", http.StatusBadRequest)
+			return
+		}
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		room := m.Room
+		if room == "" {
+			room = "lobby"
+		}
+		if f.rooms == nil {
+			f.rooms = map[string]map[string]wire.PeerAddr{}
+		}
+		if f.rooms[room] == nil {
+			f.rooms[room] = map[string]wire.PeerAddr{}
+		}
+		f.rooms[room][m.ID] = wire.PeerAddr{ID: m.ID, Nick: m.Nick, Addrs: m.Addrs}
+		writeJSON(w, wire.Msg{OK: true, Room: room})
+
+	case r.URL.Path == "/v1/discover" && r.Method == http.MethodGet:
+		q := r.URL.Query()
+		room := q.Get("room")
+		if room == "" {
+			room = "lobby"
+		}
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		res := wire.Msg{OK: true}
+		for id, p := range f.rooms[room] {
+			if id != q.Get("id") {
+				res.Peers = append(res.Peers, p)
+			}
+		}
+		writeJSON(w, res)
+
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+// TestEndToEnd 启动一个协调服务与两个客户端,验证:
 // 发现 -> 直连 -> 文字消息 -> 图片/文件媒体传输 的完整链路。
 func TestEndToEnd(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	// 1. 协调服务器(仅负责发现)
-	sh, err := libp2p.New(libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/0"))
-	if err != nil {
-		t.Fatalf("start server host: %v", err)
-	}
-	defer sh.Close()
-	reg := rv.NewRegistry(30 * time.Second)
-	sh.SetStreamHandler(rv.ProtocolID, rv.ServerHandler(reg))
-	serverInfo := peer.AddrInfo{ID: sh.ID(), Addrs: toMA(addrs.Reachable(sh))}
-	if len(serverInfo.Addrs) == 0 {
-		t.Fatal("server has no dialable addr")
-	}
+	// 1. 协调服务(仅负责发现)
+	srv := httptest.NewServer(&fakeRV{})
+	defer srv.Close()
 
 	// 2. 两个客户端节点
 	base := t.TempDir()
@@ -59,7 +96,7 @@ func TestEndToEnd(t *testing.T) {
 			IdentityPath: filepath.Join(d, "id.key"),
 			Nick:         nick,
 			Room:         "room1",
-			Server:       serverInfo,
+			RVURL:        srv.URL,
 			BlobDir:      filepath.Join(d, "blobs"),
 			ListenAddrs:  []string{"/ip4/127.0.0.1/tcp/0"},
 			OnMessage:    sink,
@@ -82,7 +119,7 @@ func TestEndToEnd(t *testing.T) {
 	na.Start(ctx)
 	nb.Start(ctx)
 
-	// 3. 等待双方通过服务器互相发现并直连
+	// 3. 等待双方通过协调服务互相发现并直连
 	waitConnected(t, ctx, na, nb)
 
 	// 4. 文字消息
@@ -133,7 +170,6 @@ func TestEndToEnd(t *testing.T) {
 	if !bytes.Equal(got, payload) {
 		t.Fatalf("received blob mismatch: got %d bytes, want %d", len(got), len(payload))
 	}
-	_ = toMA(nil)
 	t.Logf("bob received media %q (%d bytes) at %s", media.FileName, media.Size, media.MediaURL)
 }
 

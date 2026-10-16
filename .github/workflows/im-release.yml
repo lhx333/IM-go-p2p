@@ -1,0 +1,48 @@
+name: IM Client Release
+
+on:
+  push:
+    tags: ['im-v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 发布用的 tag(需已存在于仓库)
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: im/go.mod
+          cache-dependency-path: |
+            go.sum
+            im/go.sum
+
+      - name: 测试
+        run: |
+          cd im
+          go vet ./...
+          go test ./...
+
+      - name: 构建 Windows 客户端
+        run: |
+          cd im
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
+            go build -trimpath -ldflags="-s -w" -o dist/imdesktop.exe ./cmd/imdesktop
+          ls -l dist/imdesktop.exe
+
+      - name: 发布 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          gh release create "$TAG" im/dist/imdesktop.exe \
+            --title "$TAG" \
+            --generate-notes

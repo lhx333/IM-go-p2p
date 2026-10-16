@@ -20,13 +20,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/libp2p/go-libp2p/core/peer"
-
 	"github.com/lhx333/im-p2p/internal/imnet"
 )
 
+// defaultRVURL 是默认使用的协调服务(部署在 Cloudflare Workers 上的 im-rv)。
+const defaultRVURL = "https://im-rv.im-p2p-rv.workers.dev"
+
 func main() {
-	serverMA := flag.String("server", "", "协调服务器 multiaddr(必填),例如 /ip4/127.0.0.1/tcp/7001/p2p/<id>")
+	rvURL := flag.String("rv", defaultRVURL, "协调服务地址(HTTPS)")
 	room := flag.String("room", "lobby", "房间名")
 	nick := flag.String("nick", "", "昵称")
 	httpAddr := flag.String("http", "127.0.0.1:8080", "本地 UI 监听地址")
@@ -34,14 +35,10 @@ func main() {
 	autoOpen := flag.Bool("open", true, "启动后自动打开浏览器")
 	flag.Parse()
 
-	if *serverMA == "" {
-		fmt.Println("缺少 -server 参数。请先运行 imserver,复制它打印的地址,例如:")
-		fmt.Println("  imdesktop -server /ip4/192.168.1.10/tcp/7001/p2p/12D3KooW...")
+	if *rvURL == "" {
+		fmt.Println("缺少 -rv 参数。请填入协调服务地址,例如:")
+		fmt.Println("  imdesktop -rv https://im-rv.im-p2p-rv.workers.dev")
 		os.Exit(2)
-	}
-	server, err := peer.AddrInfoFromString(*serverMA)
-	if err != nil {
-		log.Fatalf("解析 -server 失败: %v", err)
 	}
 
 	dir := *dataDir
@@ -64,7 +61,7 @@ func main() {
 		IdentityPath: filepath.Join(dir, "identity.key"),
 		Nick:         nk,
 		Room:         *room,
-		Server:       *server,
+		RVURL:        *rvURL,
 		BlobDir:      filepath.Join(dir, "blobs"),
 		OnMessage:    a.onMessage,
 		OnPeers:      a.onPeers,
